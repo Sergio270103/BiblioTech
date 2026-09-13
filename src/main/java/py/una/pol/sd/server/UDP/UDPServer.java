@@ -28,7 +28,12 @@ public class UDPServer {
 
                     String respuestaJson = "{\"error\": \"Servicio no reconocido\"}";
                     if (datoRecibido.contains("\"accion\": \"listar_disponibles\"")) {
+                        System.out.println("\n[Servicio Escucha] Recibido de SGA: " + datoRecibido);
                         respuestaJson = BdServer.listarLibrosDisponibles();
+                        System.out.println("[Servicio Escucha] Envio exitoso.");
+                        
+                        // Reimprime el menú para mantener ordenada la consola del servidor
+                        System.out.print("\n--- Menu BiblioTech (UDP) ---\n1. Cargar un nuevo libro\nEscriba 'Bye' para salir.\nElija una opcion: ");
                     }
 
                     byte[] sendData = respuestaJson.getBytes();
