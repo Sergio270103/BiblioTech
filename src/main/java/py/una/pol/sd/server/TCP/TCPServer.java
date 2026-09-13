@@ -11,7 +11,7 @@ public class TCPServer {
         // 1. Hilo secundario: Escucha a los clientes (edutech)
         Thread listenerThread = new Thread(() -> {
             try (ServerSocket serverSocket = new ServerSocket(puertoServidor)) {
-                System.out.println("\n[Servicio Escucha] Puerto abierto: " + puertoServidor + ". Esperando peticiones de edutech...");
+                System.out.println("\n[Servicio Escucha TCP] Puerto abierto: " + puertoServidor + ". Esperando peticiones de edutech...");
                 while (true) {
                     Socket clientSocket = serverSocket.accept();
                     manejarCliente(clientSocket);
@@ -49,7 +49,6 @@ public class TCPServer {
                     System.out.print("Ingrese Cantidad Total: ");
                     int cantidad = Integer.parseInt(stdIn.readLine());
 
-                    // Llama directo a la BD sin pasar por la red
                     String respuesta = BdServer.agregarLibro(isbn, titulo, autor, cantidad);
                     System.out.println("Resultado BD: " + respuesta);
                 }
@@ -74,17 +73,70 @@ public class TCPServer {
                 String outputLine = "{\"error\": \"Servicio no reconocido\"}";
                 
                 if (inputLine.contains("\"accion\": \"listar_disponibles\"")) {
-                    System.out.println("\n[Servicio Escucha] Recibido de SGA: " + inputLine);
-                    outputLine = py.una.pol.sd.bd.BdServer.listarLibrosDisponibles();
-                    System.out.println("[Servicio Escucha] Envio exitoso.");
-                    
-                    // Se reimprime el menú interactivo para guiar al usuario
+                    System.out.println("\n[Servicio Escucha TCP] Recibido de SGA: " + inputLine);
+                    outputLine = BdServer.listarLibrosDisponibles();
+                    System.out.println("[Servicio Escucha TCP] Envio exitoso.");
+                    System.out.print("\n--- Menu BiblioTech (TCP) ---\n1. Cargar un nuevo libro\nEscriba 'Bye' para salir.\nElija una opcion: ");
+                
+                } else if (inputLine.contains("\"accion\": \"reservar_libro\"")) {
+                    System.out.println("\n[Servicio Escucha TCP] Recibido de SGA: " + inputLine);
+                    try {
+                        String isbn = extraerValorJson(inputLine, "isbn");
+                        String ci = extraerValorJson(inputLine, "ci");
+                        String diasStr = extraerValorJson(inputLine, "dias");
+                        int dias = Integer.parseInt(diasStr);
+
+                        outputLine = BdServer.reservarLibro(isbn, ci, dias);
+                    } catch (Exception e) {
+                        outputLine = "{\"error\": \"Formato de solicitud de reserva invalido\"}";
+                    }
+                    System.out.println("[Servicio Escucha TCP] Envio exitoso.");
+                    System.out.print("\n--- Menu BiblioTech (TCP) ---\n1. Cargar un nuevo libro\nEscriba 'Bye' para salir.\nElija una opcion: ");
+                
+                } else if (inputLine.contains("\"accion\": \"cancelar_reserva\"")) {
+                    System.out.println("\n[Servicio Escucha TCP] Recibido de SGA: " + inputLine);
+                    try {
+                        String isbn = extraerValorJson(inputLine, "isbn");
+                        String ci = extraerValorJson(inputLine, "ci");
+
+                        outputLine = BdServer.cancelarReserva(isbn, ci);
+                    } catch (Exception e) {
+                        outputLine = "{\"error\": \"Formato de solicitud de cancelacion invalido\"}";
+                    }
+                    System.out.println("[Servicio Escucha TCP] Envio exitoso.");
                     System.out.print("\n--- Menu BiblioTech (TCP) ---\n1. Cargar un nuevo libro\nEscriba 'Bye' para salir.\nElija una opcion: ");
                 }
                 out.println(outputLine);
             }
         } catch (IOException e) {
             System.err.println("Error manejando cliente: " + e.getMessage());
+        }
+    }
+
+    private static String extraerValorJson(String json, String clave) {
+        String patronClave = "\"" + clave + "\"";
+        int idxClave = json.indexOf(patronClave);
+        if (idxClave == -1) return "";
+
+        int idxDosPuntos = json.indexOf(":", idxClave);
+        if (idxDosPuntos == -1) return "";
+
+        String sub = json.substring(idxDosPuntos + 1).trim();
+
+        if (sub.startsWith("\"")) {
+            sub = sub.substring(1);
+            int idxFin = sub.indexOf("\"");
+            return idxFin != -1 ? sub.substring(0, idxFin) : "";
+        } else {
+            StringBuilder sb = new StringBuilder();
+            for (char c : sub.toCharArray()) {
+                if (Character.isDigit(c)) {
+                    sb.append(c);
+                } else {
+                    break;
+                }
+            }
+            return sb.toString();
         }
     }
 }
