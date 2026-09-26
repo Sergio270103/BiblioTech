@@ -105,6 +105,21 @@ public class TCPServer {
                     }
                     System.out.println("[Servicio Escucha TCP] Envio exitoso.");
                     System.out.print("\n--- Menu BiblioTech (TCP) ---\n1. Cargar un nuevo libro\nEscriba 'Bye' para salir.\nElija una opcion: ");
+
+                } else if (inputLine.contains("\"accion\": \"registrar_prestamo\"")) {
+                    // ===== SERVICIO NUEVO: REGISTRO DE PRESTAMO (Johana) =====
+                    System.out.println("\n[Servicio Escucha TCP] Recibido de SGA: " + inputLine);
+                    try {
+                        String isbn = extraerValorJson(inputLine, "isbn");
+                        String ci = extraerValorJson(inputLine, "ci");
+                        int dias = Integer.parseInt(extraerValorJson(inputLine, "dias"));
+
+                        outputLine = BdServer.registrarPrestamo(isbn, ci, dias);
+                    } catch (Exception e) {
+                        outputLine = "{\"estado_prestamo\": \"RECHAZADO\", \"motivo\": \"Formato de solicitud de prestamo invalido\"}";
+                    }
+                    System.out.println("[Servicio Escucha TCP] Envio exitoso.");
+                    System.out.print("\n--- Menu BiblioTech (TCP) ---\n1. Cargar un nuevo libro\nEscriba 'Bye' para salir.\nElija una opcion: ");
                 }
                 out.println(outputLine);
             }

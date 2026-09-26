@@ -283,4 +283,103 @@ public class BdServer {
             }
         }
     }
+    // ===================== SERVICIO: REGISTRO DE PRESTAMO (TCP) =====================
+    public static String registrarPrestamo(String isbn, String ciEstudiante, int diasPrestamo) {
+        if (diasPrestamo <= 0 || diasPrestamo > 30) {
+            return "{\"estado_prestamo\": \"RECHAZADO\", \"motivo\": \"Los dias de prestamo deben estar entre 1 y 30\"}";
+        }
+
+        String queryLibro = "SELECT id, cantidad_total FROM libro WHERE isbn = ?";
+        String queryEstudiante = "SELECT cedula FROM estudiante WHERE cedula = ?";
+        String queryVencidos = "SELECT COUNT(*) FROM prestamo WHERE cedula_estudiante = ? AND estado = 'ACTIVO' AND fecha_limite_devolucion < CURRENT_DATE";
+        String queryReservasActivas = "SELECT COUNT(*) FROM reserva WHERE id_libro = ? AND fecha_fin >= CURRENT_DATE";
+        String queryPrestamosActivos = "SELECT COUNT(*) FROM prestamo WHERE id_libro = ? AND estado = 'ACTIVO'";
+        String queryInsert = "INSERT INTO prestamo (id_libro, cedula_estudiante, fecha_inicio, fecha_limite_devolucion, estado) "
+                + "VALUES (?, ?, CURRENT_DATE, CURRENT_DATE + ?, 'ACTIVO') "
+                + "RETURNING id, fecha_inicio, fecha_limite_devolucion";
+
+        Connection conn = null;
+        try {
+            conn = getConnection();
+            conn.setAutoCommit(false);
+
+            // 1. Verificar que el libro exista
+            int idLibro;
+            int cantidadTotal;
+            try (PreparedStatement st = conn.prepareStatement(queryLibro)) {
+                st.setString(1, isbn);
+                ResultSet rs = st.executeQuery();
+                if (!rs.next()) {
+                    conn.rollback();
+                    return "{\"estado_prestamo\": \"RECHAZADO\", \"motivo\": \"El libro con el ISBN especificado no existe\"}";
+                }
+                idLibro = rs.getInt("id");
+                cantidadTotal = rs.getInt("cantidad_total");
+            }
+
+            // 2. Verificar que el estudiante exista
+            try (PreparedStatement st = conn.prepareStatement(queryEstudiante)) {
+                st.setString(1, ciEstudiante);
+                if (!st.executeQuery().next()) {
+                    conn.rollback();
+                    return "{\"estado_prestamo\": \"RECHAZADO\", \"motivo\": \"El estudiante no esta registrado\"}";
+                }
+            }
+
+            // 3. No se presta si el estudiante tiene libros vencidos sin devolver
+            try (PreparedStatement st = conn.prepareStatement(queryVencidos)) {
+                st.setString(1, ciEstudiante);
+                ResultSet rs = st.executeQuery();
+                if (rs.next() && rs.getInt(1) > 0) {
+                    conn.rollback();
+                    return "{\"estado_prestamo\": \"RECHAZADO\", \"motivo\": \"El estudiante tiene prestamos vencidos sin devolver\"}";
+                }
+            }
+
+            // 4. Calcular ejemplares libres = total - reservas activas - prestamos activos
+            int ocupados = 0;
+            try (PreparedStatement st = conn.prepareStatement(queryReservasActivas)) {
+                st.setInt(1, idLibro);
+                ResultSet rs = st.executeQuery();
+                if (rs.next()) ocupados += rs.getInt(1);
+            }
+            try (PreparedStatement st = conn.prepareStatement(queryPrestamosActivos)) {
+                st.setInt(1, idLibro);
+                ResultSet rs = st.executeQuery();
+                if (rs.next()) ocupados += rs.getInt(1);
+            }
+            if (cantidadTotal - ocupados <= 0) {
+                conn.rollback();
+                return "{\"estado_prestamo\": \"RECHAZADO\", \"motivo\": \"No hay ejemplares disponibles para prestamo\"}";
+            }
+
+            // 5. Registrar el prestamo
+            try (PreparedStatement st = conn.prepareStatement(queryInsert)) {
+                st.setInt(1, idLibro);
+                st.setString(2, ciEstudiante);
+                st.setInt(3, diasPrestamo);
+                ResultSet rs = st.executeQuery();
+                rs.next();
+                int id = rs.getInt("id");
+                Date inicio = rs.getDate("fecha_inicio");
+                Date limite = rs.getDate("fecha_limite_devolucion");
+                conn.commit();
+
+                String prestamoId = String.format("PRES-%s-%04d", inicio.toString().substring(0, 4), id);
+                return String.format("{\"prestamo_id\": \"%s\", \"fecha_inicio\": \"%s\", \"fecha_limite_devolucion\": \"%s\", \"estado_prestamo\": \"ACTIVO\"}",
+                        prestamoId, inicio, limite);
+            }
+
+        } catch (SQLException e) {
+            if (conn != null) {
+                try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
+            }
+            System.err.println("[Error BD Prestamo]: " + e.getMessage());
+            return "{\"estado_prestamo\": \"RECHAZADO\", \"motivo\": \"Error en BD: " + e.getMessage().replace("\"", "'") + "\"}";
+        } finally {
+            if (conn != null) {
+                try { conn.setAutoCommit(true); conn.close(); } catch (SQLException e) { e.printStackTrace(); }
+            }
+        }
+    }
 }
