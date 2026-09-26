@@ -283,7 +283,7 @@ public class BdServer {
             }
         }
     }
-    // ===================== SERVICIO: REGISTRO DE PRESTAMO (TCP) =====================
+    // Registro de Prestamo
     public static String registrarPrestamo(String isbn, String ciEstudiante, int diasPrestamo) {
         if (diasPrestamo <= 0 || diasPrestamo > 30) {
             return "{\"estado_prestamo\": \"RECHAZADO\", \"motivo\": \"Los dias de prestamo deben estar entre 1 y 30\"}";
@@ -380,6 +380,45 @@ public class BdServer {
             if (conn != null) {
                 try { conn.setAutoCommit(true); conn.close(); } catch (SQLException e) { e.printStackTrace(); }
             }
+        }
+    }
+    //Consulta de Multas
+    private static final int MULTA_POR_DIA = 2000; // Guaranies por dia de atraso y por libro
+
+    public static String consultarMultas(String ciEstudiante) {
+        String queryEstudiante = "SELECT cedula FROM estudiante WHERE cedula = ?";
+        String queryVencidos = "SELECT COUNT(*) AS libros_vencidos, "
+                + "COALESCE(SUM(CURRENT_DATE - fecha_limite_devolucion), 0) AS dias_atraso "
+                + "FROM prestamo "
+                + "WHERE cedula_estudiante = ? AND estado = 'ACTIVO' AND fecha_limite_devolucion < CURRENT_DATE";
+
+        try (Connection conn = getConnection()) {
+
+            // 1. Verificar que el estudiante exista
+            try (PreparedStatement st = conn.prepareStatement(queryEstudiante)) {
+                st.setString(1, ciEstudiante);
+                if (!st.executeQuery().next()) {
+                    return "{\"error\": \"El estudiante no esta registrado\"}";
+                }
+            }
+
+            // 2. Contar prestamos vencidos y sumar dias de atraso
+            try (PreparedStatement st = conn.prepareStatement(queryVencidos)) {
+                st.setString(1, ciEstudiante);
+                ResultSet rs = st.executeQuery();
+                rs.next();
+                int librosVencidos = rs.getInt("libros_vencidos");
+                long diasAtraso = rs.getLong("dias_atraso");
+                long montoTotal = diasAtraso * MULTA_POR_DIA;
+                boolean tieneMulta = librosVencidos > 0;
+
+                return String.format("{\"estudiante_id\": \"%s\", \"tiene_multa\": %b, \"monto_total_deuda\": %d, \"libros_vencidos\": %d}",
+                        ciEstudiante, tieneMulta, montoTotal, librosVencidos);
+            }
+
+        } catch (SQLException e) {
+            System.err.println("[Error BD Multas]: " + e.getMessage());
+            return "{\"error\": \"Error en BD al consultar multas: " + e.getMessage().replace("\"", "'") + "\"}";
         }
     }
 }

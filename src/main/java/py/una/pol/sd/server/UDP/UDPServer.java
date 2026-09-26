@@ -61,6 +61,10 @@ public class UDPServer {
                                 System.err.println("[Servicio Escucha UDP] Error extrayendo parametros: " + e.getMessage());
                                 respuestaJson = "{\"error\": \"Formato de JSON invalido o campos faltantes\"}";
                             }
+                        } else if (datoRecibido.contains("\"accion\": \"consultar_multas\"")) {
+                            // Consulta de Multas
+                            String ci = extraerValorJson(datoRecibido, "ci");
+                            respuestaJson = BdServer.consultarMultas(ci);
                         } else {
                             respuestaJson = "{\"error\": \"Servicio no reconocido\"}";
                         }
